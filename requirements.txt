@@ -3,12 +3,8 @@ pandas
 tqdm
 ipython
 click
-langid
-flask
-flask-htpasswd
-flask-cachecontrol
-somajo
+dataclasses
 gensim
-gunicorn
 pyldavis
 requests
+qurator-sbb-utils

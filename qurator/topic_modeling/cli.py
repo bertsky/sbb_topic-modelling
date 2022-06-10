@@ -7,8 +7,8 @@ from gensim.models.ldamulticore import LdaMulticore
 from tqdm import tqdm
 from qurator.utils.parallel import run as prun
 import json
-from ..sbb.ned import count_entities as _count_entities
-from ..sbb.ned import parse_sentence
+from qurator.utils.ned import count_entities as _count_entities
+from qurator.utils.ned import parse_sentence
 import os
 # from gensim.corpora.dictionary import Dictionary
 # from pyLDAvis.gensim import prepare
@@ -423,9 +423,9 @@ def lda_grid_search(out_file, corpus_file, docs_file, num_runs, max_passes, pass
 
     OUT_FILE: Store results of the grid search as pickled pandas DataFrame in this file.
 
-    CORPUS_FILE: Read the text corpus from this file.
+    CORPUS_FILE: Read the text corpus as pickled dataframe from this file.
 
-    DOCS_FILE: Read the documents (required to evalute coherence model c_v) from this file.
+    DOCS_FILE: Read the documents  as pickled dataframe (required to evalute coherence model c_v) from this file.
 
     """
 

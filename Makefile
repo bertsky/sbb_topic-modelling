@@ -1,51 +1,37 @@
 
-ALTOSOURCEPATH ?=/srv/digisam_ocr
-ALTOTARGETPATH ?=/qurator-share/alto-ner-annotated
+# b-lx0053:
+#make -f ~/qurator/mono-repo/sbb_tools/Makefile.topm corpus docs ENTITY_LINKING_FILE=digisam/digisam-ner-tagged-DC-SBB-MULTILANG.sqlite3 ENTITIES_FILE=wikipedia/de-ned.sqlite PROCESSES=10
 
-DATA_DIR ?=data/digisam
+ENTITIES_FILE ?=data/wikidata/de-wikipedia-ner-entities.pkl
+MIN_PROBA ?=0.5
+PROCESSES ?=4
+ENTITY_LINKING_FILE ?=data/digisam/digisam-ner-tagged-DC-SBB-MULTILANG.sqlite3
 
-PROCESSES ?=20
+MODS_INFO ?=data/digisam/mods_info/mods_info_df_all.2019-07-16.pkl
 
-MIN_LANG_CONFIDENCE ?=1.0
-MIN_ENTROPY_QUANTILE ?=0.2
-MAX_ENTROPY_QUANTILE ?=0.8
+MAX_PASSES ?=200
+MIN_FREQ ?=0.1
+MAX_TOPICS ?=500
+TOPIC_STEP ?=20
 
-NER_ENDPOINTS ?=http://b-lx0053.sbb.spk-berlin.de:8080 http://b-lx0053.sbb.spk-berlin.de:8081 http://b-lx0053.sbb.spk-berlin.de:8082 http://b-lx0059.sbb.spk-berlin.de:8080 http://b-lx0059.sbb.spk-berlin.de:8081 http://b-lx0059.sbb.spk-berlin.de:8082
+ned-corpus-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-%.pkl:	$(ENTITIES_FILE) $(ENTITY_LINKING_FILE)
+	extract-corpus --entities-file=$< --processes=$(PROCESSES) --min-proba=$(MIN_PROBA) --min-freq=$(MIN_FREQ) --filter-type="$*" $(word 2,$^) $@
 
-EL_ENDPOINTS="{ \"de\": \"http://b-lx0053.sbb-spk-berlin.de:5015\"}"
+ned-docs-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-%.pkl:	$(ENTITIES_FILE) $(ENTITY_LINKING_FILE)
+	extract-docs --entities-file=$< --processes=$(PROCESSES) --min-proba=$(MIN_PROBA) --min-freq=$(MIN_FREQ) --filter-type="$*" $(word 2,$^) $@
 
-$(DATA_DIR):
-	mkdir -p $@
+corpus:	ned-corpus-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-PER.pkl ned-corpus-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-LOC.pkl ned-corpus-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-ORG.pkl ned-corpus-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-PER,LOC,ORG.pkl
 
-$(DATA_DIR)/fulltext.sqlite3:	$(DATA_DIR)
-	altotool $(ALTOSOURCEPATH) $@ --processes=$(PROCESSES)
+docs:	ned-docs-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-PER.pkl ned-docs-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-LOC.pkl ned-docs-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-ORG.pkl ned-docs-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-PER,LOC,ORG.pkl
 
-$(DATA_DIR)/entropy.pkl:	$(DATA_DIR)/fulltext.sqlite3
-	corpusentropy $< $@ --processes=$(PROCESSES)
+ned-lda-grid-search-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-%.pkl:	ned-corpus-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-%.pkl ned-docs-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-%.pkl
+	lda-grid-search --processes=$(PROCESSES) --gen-vis-data --num-runs=1 --max-passes=$(MAX_PASSES) --passes-step=$(MAX_PASSES) --max-topics=$(MAX_TOPICS) --topic-step=$(TOPIC_STEP) --mods-info-file=$(MODS_INFO) $@ $^
 
-$(DATA_DIR)/language.pkl:	$(DATA_DIR)/fulltext.sqlite3
-	corpuslanguage $< $@ --processes=$(PROCESSES)
+.PRECIOUS: ned-lda-grid-search-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-%.pkl
 
-$(DATA_DIR)/DE-NL-FR-EN.pkl:    $(DATA_DIR)/language.pkl
-	select-by-lang $? $@ DE NL FR EN
+grid-search-%:	ned-lda-grid-search-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-%.pkl ;
 
-$(DATA_DIR)/DE.pkl:    $(DATA_DIR)/language.pkl
-	select-by-lang $? $@ DE
+config-%:
+	make-topicm-config data/topic_modelling/ned-lda-grid-search-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-$*.pkl data/topic_modelling/ned-corpus-min_proba$(MIN_PROBA)-min_freq$(MIN_FREQ)-$*.pkl $*
 
-$(DATA_DIR)/selection_de.pkl:	$(DATA_DIR)/language.pkl $(DATA_DIR)/entropy.pkl
-	select-by-lang-and-entropy $? $@ --min-lang-confidence=$(MIN_LANG_CONFIDENCE) --min-entropy-quantile=$(MIN_ENTROPY_QUANTILE) --max-entropy-quantile=$(MAX_ENTROPY_QUANTILE)
-
-$(DATA_DIR)/digisam-ner-tagged-DC-SBB-MULTILANG.sqlite3:	$(DATA_DIR)/fulltext.sqlite3 $(DATA_DIR)/DE-NL-FR-EN.pkl
-	batchner --noproxy --chunksize=1000 --outfile $@ $? DC-SBB-MULTILANG  $(NER_ENDPOINTS)
-
-corpus:	$(DATA_DIR)/language.pkl $(DATA_DIR)/entropy.pkl
-
-alto-ner:	$(DATA_DIR)/digisam-ner-tagged-DC-SBB-MULTILANG.sqlite3
-	alto-annotator $? $(ALTOSOURCEPATH) $(ALTOTARGETPATH) --processes=$(PROCESSES)
-
-sbb-ner: $(DATA_DIR)/digisam-ner-tagged-DC-SBB-MULTILANG.sqlite3
-
-sbb-el: sbb-ner
-	batch-el --noproxy $(DATA_DIR)/digisam-ner-tagged-DC-SBB-MULTILANG.sqlite3 $(DATA_DIR)/language.pkl $(EL_ENDPOINTS)
-docker-cpu:
-	docker build --build-arg http_proxy=${http_proxy}  -t qurator/webapp-sbb-tools-cpu -f Dockerfile.cpu .
+config:	config-PER config-LOC config-ORG config-PER,LOC,ORG
